@@ -15,14 +15,14 @@ import (
 
 // DataSetStruct is struct to hold information about schema.org/DataSet
 type DataSetStruct struct {
+	Description string
 	ID          string
 	Type        string
-	Description string
 	URL         string
 }
 
 // simple JSON-LD doc for some early testing   Will be removed later as we use simpleServer
-const jsonldtest = `{
+const bodyTest = `{
     "@context": "http://schema.org",
     "@type": "DataCatalog",
     "@id": "http://opencoredata.org/catalogs",
@@ -54,13 +54,47 @@ func main() {
 	// Store the JSON-LD to a graph as triples.  (also store the original JSON-LD to a bolt table.)
 	// In the end we have the triples of the site...
 
-	frameresult := frameForDataCatalog(jsonldtest)
-	fmt.Println(frameresult)
+	body := getDoc("http://opencoredata.org")
+	body = []byte(bodyTest) // replace with test block above....   getDoc is []byte, frameForDataCatalog is string  (review)
+	// TODO  Do we need to load this up in the URL KV with a status visited?
+	// TODO  Do we need to store the docs we get associated with a URL as well?  simple to do
+
+	frameresult := frameForDataCatalog(string(body))
+
+	// for each in struct, pull out the URL's and pass to
+	for k, v := range frameresult {
+		log.Printf("Item %d with URL: %v   \n", k, v.URL)
+		// TODO Register the URL in a KV with status set to unvisited
+		registerURL(v.URL)
+	}
 }
 
-func frameForDataCatalog(jsonld string) []string {
-	var results []string
+// getDoc simply takes a URL and return the contents of the response body to a byte array
+func getDoc(urlstring string) []byte {
 
+	u, err := url.Parse(urlstring)
+	if err != nil {
+		log.Println(err)
+	}
+
+	req, _ := http.NewRequest("GET", u.String(), nil)
+	req.Header.Set("Accept", "application/json") // oddly the content-type is ignored for the accept header...
+	req.Header.Set("Cache-Control", "no-cache")
+	res, _ := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Println(err)
+	}
+
+	defer res.Body.Close()
+
+	// secs := time.Since(start).Seconds()
+	body, _ := ioutil.ReadAll(res.Body)
+	return body
+}
+
+// frameForDataCatalog take string and JSON-LD and uses a frame call to extract
+// only type DataSet.  This is then marshalled to a struct...
+func frameForDataCatalog(jsonld string) []DataSetStruct {
 	proc := ld.NewJsonLdProcessor()
 	options := ld.NewJsonLdOptions("")
 
@@ -81,25 +115,35 @@ func frameForDataCatalog(jsonld string) []string {
 	}
 
 	graph := framedDoc["@graph"]
-
-	fmt.Println(graph) // If I don't do @graph the @context part is HUGE..  why is that?  Is the code going out on the net and getting something?
-
-	// test getting a single result into a struct..  later make an []DataSet
-
-	// ref https://stackoverflow.com/questions/38185916/convert-interface-to-map-in-golang
-	// ds := DataSetStruct{}
-	v, ok := graph.([]map[string]string) // this looks like it should assert..  based on the print statement above..
-	if !ok {
-		// Can't assert, handle error.
-		fmt.Println("Assert failed")
-	}
-	for _, s := range v {
-		fmt.Printf("Value: %v\n", s)
+	// ld.PrintDocument("JSON-LD graph section", graph)  // debug print....
+	jsonm, err := json.MarshalIndent(graph, "", " ")
+	if err != nil {
+		log.Println("Error trying to marshal data", err)
 	}
 
-	// fake results for now to satisfy the func return type
-	results = append(results, "test string")
-	return results
+	dss := make([]DataSetStruct, 0)
+	err = json.Unmarshal(jsonm, &dss)
+	if err != nil {
+		log.Println("Error trying to unmarshal data to struct", err)
+	}
+	// log.Printf("%v\n", dss)
+	return dss
+}
+
+// registerURL take a URL and places it into the bolt KV store.
+// While doing so it first ensures that the URL has not already been placed into the KV store
+// regardless of whether the URL has been marked as read.
+// These URLs come from a framing call onto the JSON-LD for a particular @type
+func registerURL(urlstring string) {
+
+	// check to see if we have been there before..  if not, load and set status unvisited
+	// If it's in the KV already ignore..  this is just a register system
+
+}
+
+// getURLToVisit just looks into the KV store and looks for a URL to visit...
+func getURLToVisit() string {
+
 }
 
 // processJSONLD takes the JSONLD document (as a byte array) and processes it to ensure
@@ -136,35 +180,4 @@ func jsonLDToRDF(jsonld string) string {
 	}
 
 	return triples.(string)
-}
-
-// registerURL take a URL and places it into the bolt KV store.
-// While doing so it first ensures that the URL has not already been placed into the KV store
-// regardless of whether the URL has been marked as read.
-// These URLs come from a framing call onto the JSON-LD for a particular @type
-func registerURL(urlstring string) {
-
-}
-
-// getDoc simply takes a URL and return the contents of the response body to a byte array
-func getDoc(urlstring string) []byte {
-
-	u, err := url.Parse(urlstring)
-	if err != nil {
-		log.Println(err)
-	}
-
-	req, _ := http.NewRequest("GET", u.String(), nil)
-	req.Header.Set("Accept", "application/json") // oddly the content-type is ignored for the accept header...
-	req.Header.Set("Cache-Control", "no-cache")
-	res, _ := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Println(err)
-	}
-
-	defer res.Body.Close()
-
-	// secs := time.Since(start).Seconds()
-	body, _ := ioutil.ReadAll(res.Body)
-	return body
 }

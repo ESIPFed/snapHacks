@@ -9,8 +9,8 @@ snapHacks are short hack-a-thons.  The are shallow quick dives into a technology
 * We will collect tools here for us to use in hacking
   * ESIP's slack can do video, audio and screen sharing...  it's quck and easy, we recommend it first.  Plus your conversation will be in the snaphack channel for others to see and contribute to.
   * Google Docs is always nice, but try and place final documents in the repo for others to see.  
-  * Realtime collaborative coding tools like:  https://kobra.io/#/ Would love to hear about others people like.
-* There are no powerpoints....  though you are encouraged to place your notes into the repository.  Just make a new name for your hack following the sh##-name pattern.  Need push access to the repo, just ask.  
+  * Realtime collaborative coding tools like:  https://kobra.io/#/ or https://codeanywhere.com/ can help in these cases.   Would love to hear about others people like to use for on-line collaborative programming.  
+* There are no powerpoints....  though you are encouraged to place your notes into the repository in markdown or plain text.  Just make a new name for your hack following the sh##-name pattern.  Need push access to the repo, just ask.  
 * You are free to explore, edit and update/fork anyones repo here.  So please note that directories in this repository are here to be a public resource for anyone.  
 
 
