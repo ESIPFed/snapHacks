@@ -99,7 +99,7 @@ func frameForDataCatalog(jsonld string) []DataSetStruct {
 	options := ld.NewJsonLdOptions("")
 
 	frame := map[string]interface{}{
-		"@context": "http://schema.org",
+		"@context": "http://schema.org/",
 		"@type":    "Dataset",
 	}
 
@@ -143,7 +143,7 @@ func registerURL(urlstring string) {
 
 // getURLToVisit just looks into the KV store and looks for a URL to visit...
 func getURLToVisit() string {
-
+	return "hi there"
 }
 
 // processJSONLD takes the JSONLD document (as a byte array) and processes it to ensure
