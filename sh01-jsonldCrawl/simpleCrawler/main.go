@@ -76,6 +76,33 @@ func main() {
 
 	// }
 
+	// Spit out all the content of the KV store just to evaluate what was done with it...
+
+	showAllKV()
+}
+
+func showAllKV() {
+
+	db, err := bolt.Open("walker.db", 0600, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	db.View(func(tx *bolt.Tx) error {
+		// Assume bucket exists and has keys
+		b := tx.Bucket([]byte("URLBucket"))
+
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			fmt.Printf("key=%s, value=%s\n", k, v)
+		}
+
+		return nil
+	})
+
+	db.Close() // explicitly close
 }
 
 // getDoc simply takes a URL and return the contents of the response body to a byte array
