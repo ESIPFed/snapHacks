@@ -5,6 +5,7 @@ These are some ideas we have bounced around for possible snaphacks.
 * Hydra  (and Triple Pattern Fragments)
 * PROV-AQ demo code / Create PROV-AQ container for adoption
 * Frictionlessdata.io Data Packages
+* GRPC - http://www.grpc.io/
 * Open Source S3 API servers (ala Minio.io)  
 * Feather for R and Jupyter
 * JSON schema
