@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/boltdb/bolt"
 	"github.com/deiu/rdf2go"
 	"github.com/kazarena/json-gold/ld"
 )
@@ -43,30 +44,38 @@ const bodyTest = `{
 `
 
 // A simple crawler to go through a given web site (single domain) and starting at
-// a JSON-LD document, walk through the tree of documents.  Driven by either hydra or
-// by JSON-LD framing.  We wil try both
+// a JSON-LD document, walk through the tree of documents leveraging JSON-LD framing
 func main() {
 	fmt.Println("Simple crawler")
 
-	// Take a seed domain
-	// read int he JSON-LD  (validate it, then frame it against a given frame...  place results into a struct)
-	// Load the URLs discovered to crawl to a boltdb system (where I can check if they have been already crawled)
-	// Store the JSON-LD to a graph as triples.  (also store the original JSON-LD to a bolt table.)
-	// In the end we have the triples of the site...
+	// setup bolt
+	SetupBolt()
 
-	body := getDoc("http://opencoredata.org")
-	body = []byte(bodyTest) // replace with test block above....   getDoc is []byte, frameForDataCatalog is string  (review)
-	// TODO  Do we need to load this up in the URL KV with a status visited?
-	// TODO  Do we need to store the docs we get associated with a URL as well?  simple to do
+	// Loop and load the whitelist URLs into the DB to start with
+	registerURL("http://opencoredata.org")
 
+	// _ count := getURLToVisit()  // just grab our initial set of URLs to visit, don't worry about a URL string returned
+
+	// for count > 0 {}
+	// URL, count := getURLToVisit()
+	//body := getDoc(URL)
+	body := []byte(bodyTest) // replace with test block above....   getDoc is []byte, frameForDataCatalog is string  (review)
 	frameresult := frameForDataCatalog(string(body))
 
-	// for each in struct, pull out the URL's and pass to
 	for k, v := range frameresult {
 		log.Printf("Item %d with URL: %v   \n", k, v.URL)
 		// TODO Register the URL in a KV with status set to unvisited
 		registerURL(v.URL)
 	}
+
+	// TODO   do further processing with the body, like index and to RDF
+	// for each in struct, pull out the URL's and pass to
+
+	// TODO make the URL visited
+	// visitedURL(URL)
+
+	// }
+
 }
 
 // getDoc simply takes a URL and return the contents of the response body to a byte array
@@ -130,11 +139,42 @@ func frameForDataCatalog(jsonld string) []DataSetStruct {
 	return dss
 }
 
+func visitedURL(urlstring string) {
+
+	// open in write mode
+	db, err := bolt.Open("walker.db", 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// look for key and set value to "visited"
+
+}
+
 // registerURL take a URL and places it into the bolt KV store.
 // While doing so it first ensures that the URL has not already been placed into the KV store
 // regardless of whether the URL has been marked as read.
 // These URLs come from a framing call onto the JSON-LD for a particular @type
 func registerURL(urlstring string) {
+	// open in write mode
+	db, err := bolt.Open("walker.db", 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// TODO, check if the key is already in the db
+	// db.
+
+	// What should the key be?  Just a simple UID?
+	db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("URLBucket"))
+		err := b.Put([]byte(urlstring), []byte("unvisited"))
+		return err
+	})
+
+	db.Close() // explicitly close...
 
 	// check to see if we have been there before..  if not, load and set status unvisited
 	// If it's in the KV already ignore..  this is just a register system
@@ -143,7 +183,21 @@ func registerURL(urlstring string) {
 
 // getURLToVisit just looks into the KV store and looks for a URL to visit...
 func getURLToVisit() string {
-	return "hi there"
+
+	//  open in read only mode so at not to block and get the first URL we find that
+	// is of value "unvisited"
+	db, err := bolt.Open("walker.db", 0600, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// TODO  set up two returns..   string and status
+	// where status is an int that can go up and down as the number of URLs
+	// left to process moves up and down
+
+	return "http://opencoredata.org"
+
 }
 
 // processJSONLD takes the JSONLD document (as a byte array) and processes it to ensure
@@ -180,4 +234,23 @@ func jsonLDToRDF(jsonld string) string {
 	}
 
 	return triples.(string)
+}
+
+func SetupBolt() {
+
+	db, err := bolt.Open("walker.db", 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// You can also create a bucket only if it doesn't exist by using the Tx.CreateBucketIfNotExists()
+	db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("URLBucket"))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		log.Printf("Bucket created %v", b.FillPercent)
+		return nil
+	})
 }
