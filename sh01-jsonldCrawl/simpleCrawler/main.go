@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/anaskhan96/soup"
 	"github.com/boltdb/bolt"
 	"github.com/deiu/rdf2go"
 	"github.com/kazarena/json-gold/ld"
@@ -19,11 +20,11 @@ type DataSetStruct struct {
 	Description string
 	ID          string
 	Type        string
-	URL         string
+	URL         string `json:"schema:url"`
 }
 
 // simple JSON-LD doc for some early testing   Will be removed later as we use simpleServer
-const bodyTest = `{
+const bodyTestOLD = `{
     "@context": "http://schema.org",
     "@type": "DataCatalog",
     "@id": "http://opencoredata.org/catalogs",
@@ -43,6 +44,35 @@ const bodyTest = `{
 }
 `
 
+const bodyTest = ` {
+ "@context": {
+  "@vocab": "http://schema.org/",
+  "re3data": "http://example.org/re3data/0.1/"
+ },
+ "@id": "http://opencoredata.org/catalogs/geolink",
+ "@type": "DataCatalog",
+ "dataset": [
+  {
+   "@type": "Dataset",
+   "description": "Collection of cruise data (leg level) for IODP collected for GeoLink",
+   "url": "http://opencoredata.org/catalog/geolink/dataset/JRSO_cruises_gl"
+  },
+  {
+   "@type": "Dataset",
+   "description": "Collection of Science Party Deployment Information collected for GeoLink",
+   "url": "http://opencoredata.org/catalog/geolink/dataset/JRSO_deployments_gl"
+  },
+  {
+   "@type": "Dataset",
+   "description": "Collection of cruise data (hole level) for IODP collected for GeoLink",
+   "url": "http://opencoredata.org/catalog/geolink/dataset/JRSO_holes_gl"
+  }
+ ],
+ "description": "A catalog of RDF graphs from Open Core Data for GeoLink that align to the GeoLink base ontology",
+ "url": "http://opencoredata.org/catalogs/geolink"
+}
+`
+
 // A simple crawler to go through a given web site (single domain) and starting at
 // a JSON-LD document, walk through the tree of documents leveraging JSON-LD framing
 func main() {
@@ -52,32 +82,38 @@ func main() {
 	SetupBolt()
 
 	// Loop and load the whitelist URLs into the DB to start with
-	registerURL("http://opencoredata.org")
+	registerURL("http://opencoredata.org/catalog/geolink")
 
-	// _ count := getURLToVisit()  // just grab our initial set of URLs to visit, don't worry about a URL string returned
+	URL, count := getURLToVisit() // just grab our initial set of URLs to visit, don't worry about a URL string returned
 
-	// for count > 0 {}
-	// URL, count := getURLToVisit()
-	//body := getDoc(URL)
-	body := []byte(bodyTest) // replace with test block above....   getDoc is []byte, frameForDataCatalog is string  (review)
-	frameresult := frameForDataCatalog(string(body))
+	for count > 0 {
+		URL, count = getURLToVisit()
+		fmt.Printf("URL to work with: %s with count %d\n", URL, count)
 
-	for k, v := range frameresult {
-		log.Printf("Item %d with URL: %v   \n", k, v.URL)
-		// TODO Register the URL in a KV with status set to unvisited
-		registerURL(v.URL)
+		if count == 0 {
+			break
+		}
+
+		body := extractJSON(URL)
+
+		// fmt.Println(string(body))
+
+		// body = []byte(bodyTest) // TEST REPLACE BODY  replace with test block above....   getDoc is []byte, frameForDataCatalog is string  (review)
+		frameresult := frameForDataCatalog(string(body))
+
+		for k, v := range frameresult {
+			log.Printf("Item %d with URL: %v   \n", k, v.URL)
+			// TODO Register the URL in a KV with status set to unvisited
+			registerURL(v.URL)
+		}
+
+		// TODO   do further processing with the body, like index and to RDF
+		// for each in struct, pull out the URL's and pass to
+
+		visitedURL(URL) // TODO make the URL visited
 	}
 
-	// TODO   do further processing with the body, like index and to RDF
-	// for each in struct, pull out the URL's and pass to
-
-	// TODO make the URL visited
-	// visitedURL(URL)
-
-	// }
-
 	// Spit out all the content of the KV store just to evaluate what was done with it...
-
 	showAllKV()
 }
 
@@ -105,7 +141,8 @@ func showAllKV() {
 	db.Close() // explicitly close
 }
 
-// getDoc simply takes a URL and return the contents of the response body to a byte array
+// getDoc DEPRECATED
+// simply takes a URL and return the contents of the response body to a byte array
 func getDoc(urlstring string) []byte {
 
 	u, err := url.Parse(urlstring)
@@ -128,6 +165,24 @@ func getDoc(urlstring string) []byte {
 	return body
 }
 
+func extractJSON(urlstring string) []byte {
+	resp, err := soup.Get(urlstring)
+	if err != nil {
+		log.Print(err)
+	}
+	doc := soup.HTMLParse(resp)
+
+	//     <script type="application/ld+json">
+	jsonld := doc.Find("script", "type", "application/ld+json").Text()
+
+	return []byte(jsonld)
+
+	// links := doc.Find("div", "id", "comicLinks").FindAll("a")
+	// for _, link := range links {
+	// 	fmt.Println(link.Text(), "| Link :", link.Attrs()["href"])
+	// }
+}
+
 // frameForDataCatalog take string and JSON-LD and uses a frame call to extract
 // only type DataSet.  This is then marshalled to a struct...
 func frameForDataCatalog(jsonld string) []DataSetStruct {
@@ -138,6 +193,14 @@ func frameForDataCatalog(jsonld string) []DataSetStruct {
 		"@context": "http://schema.org/",
 		"@type":    "Dataset",
 	}
+
+	// frame := map[string]interface{}{
+	// 	"@context": {
+	// 		"@vocab":  "http://schema.org/",
+	// 		"re3data": "http://example.org/re3data/0.1/",
+	// 	},
+	// 	"@type": "Dataset",
+	// }
 
 	var myInterface interface{}
 	err := json.Unmarshal([]byte(jsonld), &myInterface)
@@ -162,7 +225,8 @@ func frameForDataCatalog(jsonld string) []DataSetStruct {
 	if err != nil {
 		log.Println("Error trying to unmarshal data to struct", err)
 	}
-	// log.Printf("%v\n", dss)
+
+	log.Printf("This is the dss:  %v\n", dss)
 	return dss
 }
 
@@ -174,6 +238,15 @@ func visitedURL(urlstring string) {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	// What should the key be?  Just a simple UID?
+	db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("URLBucket"))
+		err := b.Put([]byte(urlstring), []byte("visited"))
+		return err
+	})
+
+	db.Close() // explicitly close...
 
 	// look for key and set value to "visited"
 
@@ -209,7 +282,7 @@ func registerURL(urlstring string) {
 }
 
 // getURLToVisit just looks into the KV store and looks for a URL to visit...
-func getURLToVisit() string {
+func getURLToVisit() (string, int) {
 
 	//  open in read only mode so at not to block and get the first URL we find that
 	// is of value "unvisited"
@@ -219,11 +292,26 @@ func getURLToVisit() string {
 	}
 	defer db.Close()
 
-	// TODO  set up two returns..   string and status
-	// where status is an int that can go up and down as the number of URLs
-	// left to process moves up and down
+	var uvsite []byte
+	count := 0
 
-	return "http://opencoredata.org"
+	db.View(func(tx *bolt.Tx) error {
+		// Assume bucket exists and has keys
+		b := tx.Bucket([]byte("URLBucket"))
+
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			if strings.Compare(string(v), "unvisited") == 0 {
+				uvsite = k
+				count = count + 1
+			}
+			// fmt.Printf("key=%s, value=%s\n", k, v)
+		}
+		return nil
+	})
+
+	return string(uvsite), count
 
 }
 
